@@ -1,0 +1,39 @@
+name: Consulta Diaria Repom
+
+on:
+  schedule:
+    # Executa todo dia pontualmente as 13:00 de Brasilia (16:00 UTC)
+    - cron: '0 16 * * *'
+  # Permite disparar manualmente a qualquer momento pelo botao no GitHub
+  workflow_dispatch:
+
+jobs:
+  executar-consulta:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Baixar o codigo
+        uses: actions/checkout@v4
+
+      - name: Instalar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Instalar dependencias
+        run: npm install
+
+      - name: Executar o Robo Repom
+        env:
+          REPOM_USER: ${{ secrets.REPOM_USER }}
+          REPOM_PASS: ${{ secrets.REPOM_PASS }}
+          EMAIL_USER: ${{ secrets.EMAIL_USER }}
+          EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
+          APPS_SCRIPT_URL: ${{ secrets.APPS_SCRIPT_URL }}
+        run: node consultar_tags_repom.js
+
+      - name: Salvar planilha/CSV gerado
+        uses: actions/upload-artifact@v4
+        with:
+          name: resultado-consulta-tags
+          path: resultado_consulta_tags.csv
