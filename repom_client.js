@@ -1,5 +1,6 @@
 const fs = require('fs');
 const readline = require('readline');
+const { buscarCodigo2FA } = require('./leitor_email_imap');
 
 class RepomClient {
   constructor(sessionFile = 'sessao_repom.json') {
