@@ -2,8 +2,8 @@ name: Consulta Diaria Repom
 
 on:
   schedule:
-    # Executa todo dia pontualmente as 13:00 de Brasilia (16:00 UTC)
-    - cron: '0 16 * * *'
+    # Executa a cada 8 horas (00:00, 08:00 e 16:00 UTC)
+     - cron: '0 */8 * * *'
   # Permite disparar manualmente a qualquer momento pelo botao no GitHub
   workflow_dispatch:
 
