@@ -62,13 +62,31 @@ async function obterPlacas() {
 
 function formatarLinhaResultado(placa, tags) {
   const hoje = new Date().toLocaleDateString('pt-BR');
-  const tagAtiva = Array.isArray(tags) ? tags.find(t => t.StatusTag === 'Ativa' || (t.NumeroTag && String(t.NumeroTag).trim() !== '')) : null;
+  
+  let tagAtiva = null;
+  if (Array.isArray(tags) && tags.length > 0) {
+    // 1º Prioriza status explicitamente Ativa
+    tagAtiva = tags.find(t => {
+      const st = String(t.StatusTag || '').trim().toUpperCase();
+      return st === 'ATIVA' || st === 'ATIVO';
+    });
+
+    // 2º Se não achou, pega uma com número que não seja cancelada/inativa/bloqueada
+    if (!tagAtiva) {
+      tagAtiva = tags.find(t => {
+        const num = String(t.NumeroTag || '').trim();
+        const st = String(t.StatusTag || '').trim().toUpperCase();
+        const isInativa = (st === 'INATIVA' || st === 'INATIVO' || st === 'CANCELADA' || st === 'BLOQUEADA');
+        return num !== '' && !isInativa;
+      });
+    }
+  }
 
   if (tagAtiva) {
     return [
       hoje,
       placa,
-      tagAtiva.NomeTag.replace(/^Tag\s+/i, '').trim(),
+      (tagAtiva.NomeTag || '').replace(/^Tag\s+/i, '').trim(),
       'SIM',
       tagAtiva.NumeroTag || '-',
       tagAtiva.StatusTag || 'Ativa'
@@ -84,7 +102,6 @@ function formatarLinhaResultado(placa, tags) {
     ];
   }
 }
-
 async function main() {
   console.log('========================================================');
   console.log('   ROBÔ DE CONSULTA DE TAGS REPOM (COM SUPORTE A 2FA)  ');
