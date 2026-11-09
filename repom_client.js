@@ -30,7 +30,7 @@ class RepomClient {
   }
 
   saveCookies(headers) {
-    if (headers.getSetCookie) {
+    if (headers && headers.getSetCookie) {
       headers.getSetCookie().forEach(c => {
         const parts = c.split(';')[0].split('=');
         if (parts.length >= 2) {
@@ -44,15 +44,33 @@ class RepomClient {
     return [...this.cookies.entries()].map(([k, v]) => `${k}=${v}`).join('; ');
   }
 
-  async fetchWithCookies(url, options = {}) {
-    const headers = options.headers || {};
+  async fetchWithCookies(url, options = {}, tentativas = 3) {
+    const headers = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+      'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
+      ...(options.headers || {})
+    };
+
     const cookieHeader = this.getCookieHeader();
     if (cookieHeader) {
       headers['cookie'] = cookieHeader;
     }
-    const res = await fetch(url, { ...options, headers });
-    this.saveCookies(res.headers);
-    return res;
+
+    for (let i = 1; i <= tentativas; i++) {
+      try {
+        const res = await fetch(url, { ...options, headers });
+        this.saveCookies(res.headers);
+        return res;
+      } catch (err) {
+        console.log(`⚠️ Tentativa ${i}/${tentativas} falhou ao conectar em ${url} (${err.message}).`);
+        if (i === tentativas) {
+          throw err;
+        }
+        console.log('⏳ Aguardando 3s antes de tentar novamente...');
+        await new Promise(r => setTimeout(r, 3000));
+      }
+    }
   }
 
   promptTerminal(texto) {
@@ -74,8 +92,8 @@ class RepomClient {
           'x-requested-with': 'XMLHttpRequest'
         },
         body: 'placa=IPO1C08'
-      });
-      if (res.status === 200) {
+      }, 1);
+      if (res && res.status === 200) {
         const text = await res.text();
         return !text.startsWith('<');
       }
