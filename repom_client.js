@@ -6,7 +6,21 @@ class RepomClient {
   constructor(sessionFile = 'sessao_repom.json') {
     this.sessionFile = sessionFile;
     this.cookies = new Map();
+    this.carregarCookiesSecret();
     this.carregarSessao();
+  }
+
+  carregarCookiesSecret() {
+    const rawCookie = process.env.REPOM_SESSION_COOKIE;
+    if (rawCookie) {
+      rawCookie.split(';').forEach(c => {
+        const parts = c.split('=');
+        if (parts.length >= 2) {
+          this.cookies.set(parts[0].trim(), parts.slice(1).join('=').trim());
+        }
+      });
+      console.log('🔑 Cookies carregados diretamente do REPOM_SESSION_COOKIE (GitHub Secrets)!');
+    }
   }
 
   carregarSessao() {
@@ -26,7 +40,6 @@ class RepomClient {
   salvarSessao() {
     const obj = Object.fromEntries(this.cookies.entries());
     fs.writeFileSync(this.sessionFile, JSON.stringify(obj, null, 2), 'utf8');
-    console.log('💾 Sessão salva em ' + this.sessionFile + ' para uso futuro.');
   }
 
   saveCookies(headers) {
@@ -64,10 +77,7 @@ class RepomClient {
         return res;
       } catch (err) {
         console.log(`⚠️ Tentativa ${i}/${tentativas} falhou ao conectar em ${url} (${err.message}).`);
-        if (i === tentativas) {
-          throw err;
-        }
-        console.log('⏳ Aguardando 3s antes de tentar novamente...');
+        if (i === tentativas) throw err;
         await new Promise(r => setTimeout(r, 3000));
       }
     }
@@ -107,11 +117,11 @@ class RepomClient {
     console.log('Verificando se há sessão ativa salva...');
     const jaLogado = await this.estaLogado();
     if (jaLogado) {
-      console.log('✅ Sessão salva ainda está válida! Entrando direto.');
+      console.log('🚀 SESSÃO ATIVA CONFIRMADA! Entrando direto na consulta de tags (SEM LOGIN / SEM 2FA).');
       return;
     }
 
-    console.log('1. Acessando portal da Repom...');
+    console.log('Sessão expirou ou não encontrada. Iniciando login no portal da Repom...');
     let currUrl = 'https://www.repom.com.br/Repom.Frete.Web/';
     let lastHtml = '';
 
@@ -135,7 +145,7 @@ class RepomClient {
     const token = tokenMatch[1];
     const returnUrl = returnUrlMatch[1].replace(/&amp;/g, '&');
 
-    console.log('2. Enviando usuário e senha...');
+    console.log('Enviando credenciais...');
     const loginParams = new URLSearchParams({
       Username: username,
       Password: password,
@@ -159,22 +169,13 @@ class RepomClient {
 
     let nextUrl = new URL(redirectAfterLogin, currUrl).href;
 
-    // Se solicitar 2FA
     if (nextUrl.includes('LoginWith2fa')) {
-      console.log('\n🔒 A Repom solicitou autenticação em duas etapas (2FA)!');
+      console.log('\n🔒 2FA acionado pela Repom!');
       const res2fa = await this.fetchWithCookies(nextUrl, { redirect: 'manual' });
       const html2fa = await res2fa.text();
 
-      console.log('--- Analisando formulário 2FA ---');
-      const allInputs = [...html2fa.matchAll(/<input[^>]+>/gi)].map(m => m[0]);
-      console.log('Campos detectados no 2FA:\n' + allInputs.join('\n'));
-      const allButtons = [...html2fa.matchAll(/<button[^>]+>/gi)].map(m => m[0]);
-      console.log('Botões detectados:\n' + allButtons.join('\n'));
-
-      // Procura o nome do campo do código (ex: TwoFactorCode, Code, etc.)
       const codeInputMatch = html2fa.match(/<input[^>]+name="([^"]*code[^"]*)"/i) || html2fa.match(/<input[^>]+type="text"[^>]+name="([^"]+)"/i);
       const codeInputName = codeInputMatch ? codeInputMatch[1] : 'TwoFactorCode';
-      console.log(`Campo de código identificado como: "${codeInputName}"`);
 
       const token2faMatch = html2fa.match(/name="__RequestVerificationToken" type="hidden" value="([^"]+)"/);
       const returnUrl2faMatch = html2fa.match(/name="ReturnUrl" value="([^"]+)"/);
@@ -187,13 +188,13 @@ class RepomClient {
         const emailUser = process.env.EMAIL_USER || 'gabriel.santos@ajborges.com';
         const emailPass = process.env.EMAIL_PASS || 'Gabriel321!';
         codigo2fa = await buscarCodigo2FA(emailUser, emailPass, inicioTentativa);
-        console.log(`🤖 [AGENTE 2FA] Código capturado automaticamente do servidor de e-mail: ${codigo2fa}`);
+        console.log(`🤖 [AGENTE 2FA] Código capturado: ${codigo2fa}`);
       } catch (eImap) {
-        console.log('⚠️ Leitura IMAP falhou, solicitando manualmente:', eImap.message);
+        console.log('⚠️ Leitura IMAP falhou:', eImap.message);
       }
 
       if (!codigo2fa) {
-        codigo2fa = await this.promptTerminal('👉 Digite o código de 6 dígitos recebido por e-mail: ');
+        codigo2fa = await this.promptTerminal('👉 Digite o código de 6 dígitos: ');
       }
 
       const params2fa = new URLSearchParams();
@@ -206,7 +207,6 @@ class RepomClient {
 
       const form2faActionMatch = html2fa.match(/<form[^>]+action="([^"]*)"/i);
       const postTargetUrl = form2faActionMatch && form2faActionMatch[1] ? new URL(form2faActionMatch[1].replace(/&amp;/g, '&'), nextUrl).href : nextUrl;
-      console.log('Destino do POST 2FA:', postTargetUrl);
 
       const submit2faRes = await this.fetchWithCookies(postTargetUrl, {
         method: 'POST',
@@ -215,33 +215,24 @@ class RepomClient {
         body: params2fa.toString()
       });
 
-      console.log('Status da resposta 2FA:', submit2faRes.status);
       let redirectPos2fa = submit2faRes.headers.get('location');
       const res2faText = await submit2faRes.text();
 
-      // O IdentityServer usa redirecionamento via <meta http-equiv="refresh"> no 2FA com sucesso
       if (!redirectPos2fa) {
         const metaMatch = res2faText.match(/data-url="([^"]+)"/i) || res2faText.match(/url=([^"'>\s]+)/i);
         if (metaMatch) {
           redirectPos2fa = metaMatch[1].replace(/&amp;/g, '&');
-          console.log('✅ 2FA validado com sucesso! Redirecionamento meta detectado.');
         }
       }
 
-      console.log('Redirecionamento pós-2FA:', redirectPos2fa);
-
       if (!redirectPos2fa || redirectPos2fa.includes('LoginWith2fa')) {
-        const errMatch = res2faText.match(/<div class="[^"]*validation-summary-errors[^"]*">([\s\S]*?)<\/div>/i) || res2faText.match(/<span class="[^"]*field-validation-error[^"]*">([\s\S]*?)<\/span>/i);
-        const errMsg = errMatch ? errMatch[1].replace(/<[^>]+>/g, ' ').trim() : 'Código inválido ou rejeitado.';
-        throw new Error(`Falha no 2FA: ${errMsg}`);
+        throw new Error('Falha no 2FA da Repom.');
       }
 
       nextUrl = new URL(redirectPos2fa, postTargetUrl).href;
-      console.log('✅ 2FA validado com sucesso!');
     }
 
     // Handshake OpenID
-    console.log('3. Processando autorização...');
     const callbackRes = await this.fetchWithCookies(nextUrl, { redirect: 'manual' });
     const callbackHtml = await callbackRes.text();
 
@@ -272,11 +263,8 @@ class RepomClient {
         subperfilHtml = await rLoc.text();
       }
 
-      // 4. Seleção automática da conta (6856 - AJBORGES)
       if (subperfilHtml.includes('Acessar') || subperfilHtml.includes('AJBORGES') || subperfilHtml.includes('LoginListaSubperfil')) {
-        console.log('4. Selecionando conta da empresa (AJBORGES)...');
         const linkAcessar = subperfilHtml.match(/<a[^>]+href="([^"]+)"[^>]*>[\s\S]*?Acessar/i) || subperfilHtml.match(/href="([^"]*Selecionar[^"]*)"/i);
-
         if (linkAcessar) {
           const urlAcessar = new URL(linkAcessar[1].replace(/&amp;/g, '&'), 'https://www.repom.com.br/Repom.Frete.Web/Account/LoginListaSubperfil').href;
           const rAcessar = await this.fetchWithCookies(urlAcessar, { redirect: 'manual' });
@@ -291,7 +279,7 @@ class RepomClient {
     }
 
     this.salvarSessao();
-    console.log('🎉 Login e seleção de conta concluídos com sucesso!');
+    console.log('🎉 Sessão iniciada com sucesso!');
   }
 
   async consultarPlaca(placa) {
