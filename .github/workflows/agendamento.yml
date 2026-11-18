@@ -2,9 +2,8 @@ name: Consulta Diaria Repom
 
 on:
   schedule:
-    # Executa a cada 8 horas (00:00, 08:00 e 16:00 UTC)
-     - cron: '0 */8 * * *'
-  # Permite disparar manualmente a qualquer momento pelo botao no GitHub
+    # Executa a cada 1 hora cheia (ex: 08:00, 09:00, 10:00...)
+    - cron: '0 * * * *'
   workflow_dispatch:
 
 jobs:
@@ -30,6 +29,7 @@ jobs:
           EMAIL_USER: ${{ secrets.EMAIL_USER }}
           EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
           APPS_SCRIPT_URL: ${{ secrets.APPS_SCRIPT_URL }}
+          REPOM_SESSION_COOKIE: ${{ secrets.REPOM_SESSION_COOKIE }}
         run: node consultar_tags_repom.js
 
       - name: Salvar planilha/CSV gerado
