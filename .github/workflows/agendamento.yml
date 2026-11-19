@@ -2,8 +2,8 @@ name: Consulta Diaria Repom
 
 on:
   schedule:
-    # Executa a cada 1 hora cheia (ex: 08:00, 09:00, 10:00...)
-    - cron: '0 * * * *'
+    # Executa a cada 2 horas no minuto 23 (foge do pico do minuto zero do GitHub)
+    - cron: '23 */2 * * *'
   workflow_dispatch:
 
 jobs:
